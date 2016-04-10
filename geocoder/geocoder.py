@@ -35,15 +35,22 @@ def bag42(environ, start_response):
 
     cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    cursor.execute("select * from geocoder_search where search @@ to_tsquery('simple', %s) LIMIT %s;" , (search, limit, ))
+    cursor.execute("select *, ts_rank_cd(search, query) AS rank from geocoder_search, to_tsquery('simple', %s) as query where query @@ search ORDER BY rank DESC LIMIT %s;" , (search, limit, ))
 
     geojson = { 'type': 'FeatureCollection', 'features': [] }
     row = cursor.fetchone()
     while row is not None:
-        search = (row['rue'] + ' ' + str(row['numero'] or '') + ' ' + str(row['localite'] or '')).strip()
+        if row['name'] == row['localite']:
+            search = row['name'].strip()
+        else:
+            search = ' '.join([x for x in [row['rue'], str(row['numero'] or ''), str(row['localite'] or '')] if x != ''])
+            if row['name'] != '' and search != '':
+                search = row['name'] + ', ' + search
+            else:
+                search = row['name']
         properties = {'search': search}
         for k in row.keys():
-           if row[k] is not None and row[k] != '' and k != 'lat' and k != 'long' and k != 'search' and k != id:
+           if row[k] is not None and row[k] != '' and k != 'lat' and k != 'lon' and k != 'search' and k != id and k != 'query':
                properties[k] = row[k]
 
         geojson['features'].append({'type': 'Feature', 'id': row['id'], 'geometry': { 'type': 'Point', 'coordinates': [float(row['lon']), float(row['lat'])] }, 'properties': properties })
